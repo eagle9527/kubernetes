@@ -120,7 +120,7 @@ func NewCmdPortForward(f cmdutil.Factory, streams genericiooptions.IOStreams) *c
 				// 读取文件
 				file, err := ioutil.ReadFile(args[0])
 				if err != nil {
-					klog.Fatalf("ReadFile Error: %s: %v", err)
+					klog.Fatalf("ReadFile Error: %s", err)
 					return
 				}
 
@@ -134,7 +134,7 @@ func NewCmdPortForward(f cmdutil.Factory, streams genericiooptions.IOStreams) *c
 				var wg sync.WaitGroup
 				for _, arg := range config.PortForward {
 					StringSlice := []string{arg.Resource, fmt.Sprintf("%d:%d", arg.LocalPort, arg.RemotePort)}
-					fmt.Println(fmt.Sprintf("Name: %s LocalPort: http://127.0.0.1:%d", arg.Name, arg.LocalPort))
+					klog.Info(fmt.Sprintf("Name: %s LocalPort: http://127.0.0.1:%d", arg.Name, arg.LocalPort))
 					wg.Add(1)
 					cmdutil.CheckErr(opts.Complete(f, cmd, StringSlice))
 					cmdutil.CheckErr(opts.Validate())
