@@ -29,6 +29,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"gopkg.in/yaml.v3"
+	"io/ioutil"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -38,12 +40,14 @@ import (
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
+	"k8s.io/klog/v2"
 	cmdutil "k8s.io/kubectl/pkg/cmd/util"
 	"k8s.io/kubectl/pkg/polymorphichelpers"
 	"k8s.io/kubectl/pkg/util"
 	"k8s.io/kubectl/pkg/util/completion"
 	"k8s.io/kubectl/pkg/util/i18n"
 	"k8s.io/kubectl/pkg/util/templates"
+	"sync"
 )
 
 // PortForwardOptions contains all the options for running the port-forward cli command.
@@ -112,9 +116,39 @@ func NewCmdPortForward(f cmdutil.Factory, streams genericiooptions.IOStreams) *c
 		Example:               portforwardExample,
 		ValidArgsFunction:     completion.PodResourceNameCompletionFunc(f),
 		Run: func(cmd *cobra.Command, args []string) {
-			cmdutil.CheckErr(opts.Complete(f, cmd, args))
-			cmdutil.CheckErr(opts.Validate())
-			cmdutil.CheckErr(opts.RunPortForward())
+			if len(args) == 1 {
+				// 读取文件
+				file, err := ioutil.ReadFile(args[0])
+				if err != nil {
+					klog.Fatalf("ReadFile Error: %s: %v", err)
+					return
+				}
+
+				var config Server
+				err = yaml.Unmarshal(file, &config)
+				if err != nil {
+					klog.Fatalf("yaml Unmarshal Error: %s: %v", err)
+				}
+
+				// 解析数据
+				var wg sync.WaitGroup
+				for _, arg := range config.PortForward {
+					StringSlice := []string{arg.Resource, fmt.Sprintf("%d:%d", arg.LocalPort, arg.RemotePort)}
+					fmt.Println(fmt.Sprintf("Name: %s LocalPort: http://127.0.0.1:%d", arg.Name, arg.LocalPort))
+					wg.Add(1)
+					cmdutil.CheckErr(opts.Complete(f, cmd, StringSlice))
+					cmdutil.CheckErr(opts.Validate())
+					cmdutil.CheckErr(opts.RunPortForward())
+				}
+				wg.Wait()
+			} else {
+				var wg sync.WaitGroup
+				wg.Add(1)
+				cmdutil.CheckErr(opts.Complete(f, cmd, args))
+				cmdutil.CheckErr(opts.Validate())
+				cmdutil.CheckErr(opts.RunPortForward())
+				wg.Wait()
+			}
 		},
 	}
 	cmdutil.AddPodRunningTimeoutFlag(cmd, defaultPodPortForwardWaitTimeout)
@@ -413,5 +447,9 @@ func (o PortForwardOptions) RunPortForward() error {
 		Name(pod.Name).
 		SubResource("portforward")
 
-	return o.PortForwarder.ForwardPorts("POST", req.URL(), o)
+	go func() {
+		o.PortForwarder.ForwardPorts("POST", req.URL(), o)
+	}()
+
+	return err
 }
